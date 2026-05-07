@@ -194,6 +194,7 @@ e:\db_practice_roots\
 ├── config.py                 ← 本地配置（已git-ignore，含密码）
 ├── config.example.py         ← 配置模板（队友复制使用）
 ├── requirements.txt
+├── environment.yml           ← Conda 环境配置（推荐）
 ├── schema/
 │   ├── create_tables.sql     ← 6张表 DDL + 触发器
 │   └── indexes.sql           ← 7个索引

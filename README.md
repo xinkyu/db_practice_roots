@@ -7,8 +7,9 @@
 ## 快速启动
 
 ```bash
-# 1. 安装依赖
-pip install -r requirements.txt
+# 1. 配置环境 (推荐使用 conda)
+conda env create -f environment.yml
+conda activate genealogy
 
 # 2. 创建 .env 文件（参考下方格式，填入你的参数）
 
