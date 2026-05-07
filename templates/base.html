@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}寻根溯源{% endblock %} — 族谱管理系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% if session.get('user_id') %}
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="brand-icon">🌳</span>
+            <span class="brand-text">寻根溯源</span>
+        </div>
+        <div class="nav-links" id="navLinks"></div>
+        <div class="nav-user">
+            <span class="user-badge">{{ session.get('username', '') }}</span>
+            <button class="btn-ghost" onclick="logout()">退出</button>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+    async function logout() {
+        await fetch('/api/auth/logout', {method:'POST'});
+        location.href = '/';
+    }
+
+    async function api(url, opts={}) {
+        const res = await fetch(url, {
+            headers: {'Content-Type': 'application/json'},
+            ...opts
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '请求失败');
+        return data;
+    }
+
+    function showToast(msg, type='success') {
+        const t = document.createElement('div');
+        t.className = `toast toast-${type}`;
+        t.textContent = msg;
+        document.body.appendChild(t);
+        setTimeout(() => t.classList.add('show'), 10);
+        setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+    }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

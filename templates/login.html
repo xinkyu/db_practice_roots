@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}登录 / 注册{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-icon">🌳</div>
+            <h1>寻根溯源</h1>
+            <p class="auth-subtitle">族谱管理系统</p>
+        </div>
+
+        <div class="tab-bar">
+            <button class="tab-btn active" id="tabLogin" onclick="switchTab('login')">登 录</button>
+            <button class="tab-btn" id="tabRegister" onclick="switchTab('register')">注 册</button>
+        </div>
+
+        <!-- 登录表单 -->
+        <form id="loginForm" class="auth-form" onsubmit="doLogin(event)">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="loginUsername" placeholder="请输入用户名" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label>密 码</label>
+                <input type="password" id="loginPassword" placeholder="请输入密码" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn-primary btn-full">登 录</button>
+        </form>
+
+        <!-- 注册表单 -->
+        <form id="registerForm" class="auth-form hidden" onsubmit="doRegister(event)">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="regUsername" placeholder="请设置用户名（3-20位）" required minlength="3" maxlength="20">
+            </div>
+            <div class="form-group">
+                <label>密 码</label>
+                <input type="password" id="regPassword" placeholder="请设置密码（6位以上）" required minlength="6">
+            </div>
+            <div class="form-group">
+                <label>确认密码</label>
+                <input type="password" id="regPasswordConfirm" placeholder="请再次输入密码" required>
+            </div>
+            <button type="submit" class="btn-primary btn-full">注 册</button>
+        </form>
+    </div>
+    <div class="auth-bg-decoration"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(tab) {
+    document.getElementById('loginForm').classList.toggle('hidden', tab !== 'login');
+    document.getElementById('registerForm').classList.toggle('hidden', tab !== 'register');
+    document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+    document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+}
+
+async function doLogin(e) {
+    e.preventDefault();
+    try {
+        await api('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({
+                username: document.getElementById('loginUsername').value,
+                password: document.getElementById('loginPassword').value,
+            })
+        });
+        location.href = '/dashboard';
+    } catch(err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function doRegister(e) {
+    e.preventDefault();
+    const pw = document.getElementById('regPassword').value;
+    const pw2 = document.getElementById('regPasswordConfirm').value;
+    if (pw !== pw2) { showToast('两次密码不一致', 'error'); return; }
+    try {
+        await api('/api/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({
+                username: document.getElementById('regUsername').value,
+                password: pw,
+            })
+        });
+        location.href = '/dashboard';
+    } catch(err) {
+        showToast(err.message, 'error');
+    }
+}
+</script>
+{% endblock %}

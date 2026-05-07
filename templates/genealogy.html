@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}族谱详情{% endblock %}
+{% block head %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <button class="btn-ghost" onclick="location.href='/dashboard'">← 返回</button>
+    <h1 id="genealogyTitle">加载中…</h1>
+    <button class="btn-primary" onclick="openAddMember()">＋ 添加成员</button>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-row">
+    <div class="stat-card"><div class="stat-num" id="statTotal">—</div><div class="stat-label">总成员</div></div>
+    <div class="stat-card"><div class="stat-num" id="statMale">—</div><div class="stat-label">男性</div></div>
+    <div class="stat-card"><div class="stat-num" id="statFemale">—</div><div class="stat-label">女性</div></div>
+    <div class="stat-card"><div class="stat-num" id="statGen">—</div><div class="stat-label">最大辈分</div></div>
+</div>
+
+<!-- 标签页 -->
+<div class="tab-bar sub-tabs">
+    <button class="tab-btn active" onclick="showTab('members')">成员列表</button>
+    <button class="tab-btn" onclick="showTab('tree')">树形预览</button>
+    <button class="tab-btn" onclick="showTab('ancestors')">祖先查询</button>
+    <button class="tab-btn" onclick="showTab('kinship')">亲缘关系</button>
+</div>
+
+<!-- 成员列表 -->
+<div id="tab-members" class="tab-content">
+    <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="🔍 模糊搜索成员姓名…" oninput="searchMembers()">
+    </div>
+    <div id="memberTable"></div>
+    <div class="pagination" id="pagination"></div>
+</div>
+
+<!-- 树形预览 -->
+<div id="tab-tree" class="tab-content hidden">
+    <div class="tool-row">
+        <label>根节点 ID：<input type="number" id="treeRootId" placeholder="成员ID" style="width:120px"></label>
+        <label>层数：<input type="number" id="treeDepth" value="4" min="1" max="8" style="width:60px"></label>
+        <button class="btn-primary" onclick="loadTree()">生成树形图</button>
+    </div>
+    <div id="treeContainer" class="tree-container"></div>
+</div>
+
+<!-- 祖先查询 -->
+<div id="tab-ancestors" class="tab-content hidden">
+    <div class="tool-row">
+        <label>成员 ID：<input type="number" id="ancestorMemberId" placeholder="输入成员ID" style="width:140px"></label>
+        <button class="btn-primary" onclick="loadAncestors()">追溯祖先</button>
+    </div>
+    <div id="ancestorResult"></div>
+</div>
+
+<!-- 亲缘关系 -->
+<div id="tab-kinship" class="tab-content hidden">
+    <div class="tool-row">
+        <label>成员A ID：<input type="number" id="kinshipId1" placeholder="ID" style="width:120px"></label>
+        <label>成员B ID：<input type="number" id="kinshipId2" placeholder="ID" style="width:120px"></label>
+        <button class="btn-primary" onclick="loadKinship()">查询关系</button>
+    </div>
+    <div id="kinshipResult"></div>
+</div>
+
+<!-- 添加成员对话框 -->
+<div class="modal-overlay hidden" id="addMemberModal">
+    <div class="modal">
+        <div class="modal-header"><h2>添加成员</h2><button class="btn-icon" onclick="closeModal('addMemberModal')">✕</button></div>
+        <form onsubmit="submitMember(event)">
+            <div class="form-row">
+                <div class="form-group"><label>姓名 *</label><input type="text" id="mName" required></div>
+                <div class="form-group"><label>性别 *</label>
+                    <select id="mGender"><option value="M">男</option><option value="F">女</option></select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>出生年</label><input type="number" id="mBirth" min="1" max="2100"></div>
+                <div class="form-group"><label>卒年</label><input type="number" id="mDeath" min="1" max="2100"></div>
+            </div>
+            <div class="form-group"><label>辈分（代）</label><input type="number" id="mGen" value="1" min="1"></div>
+            <div class="form-group"><label>生平简介</label><textarea id="mBio" rows="3"></textarea></div>
+            <div class="modal-footer">
+                <button type="button" class="btn-ghost" onclick="closeModal('addMemberModal')">取消</button>
+                <button type="submit" class="btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tree.js') }}"></script>
+<script>
+const gid = parseInt(location.pathname.split('/')[2]);
+let currentPage = 1;
+const perPage = 30;
+
+// ── 初始化 ──────────────────────────────────────────────────
+async function init() {
+    const g = await api(`/api/genealogies/${gid}`);
+    document.getElementById('genealogyTitle').textContent = g.name;
+
+    const stats = await api(`/api/genealogies/${gid}/dashboard`);
+    document.getElementById('statTotal').textContent = (stats.total||0).toLocaleString();
+    document.getElementById('statMale').textContent = (stats.male_count||0).toLocaleString();
+    document.getElementById('statFemale').textContent = (stats.female_count||0).toLocaleString();
+    document.getElementById('statGen').textContent = stats.max_generation || '—';
+
+    loadMembers();
+}
+
+// ── 标签页切换 ───────────────────────────────────────────────
+function showTab(tab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.sub-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`tab-${tab}`).classList.remove('hidden');
+    event.target.classList.add('active');
+}
+
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function openAddMember() { document.getElementById('addMemberModal').classList.remove('hidden'); }
+
+// ── 成员列表 ─────────────────────────────────────────────────
+async function loadMembers(page=1) {
+    currentPage = page;
+    const data = await api(`/api/genealogies/${gid}/members?page=${page}&per_page=${perPage}`);
+    renderMemberTable(data.members);
+    renderPagination(data.total, page);
+}
+
+function renderMemberTable(members) {
+    if (!members.length) {
+        document.getElementById('memberTable').innerHTML = '<div class="empty-state">暂无成员</div>';
+        return;
+    }
+    document.getElementById('memberTable').innerHTML = `
+        <table class="data-table">
+            <thead><tr><th>ID</th><th>姓名</th><th>性别</th><th>出生年</th><th>卒年</th><th>辈分</th><th>操作</th></tr></thead>
+            <tbody>${members.map(m => `
+                <tr>
+                    <td class="id-cell">${m.member_id}</td>
+                    <td><strong>${m.name}</strong></td>
+                    <td>${m.gender === 'M' ? '♂ 男' : '♀ 女'}</td>
+                    <td>${m.birth_year || '—'}</td>
+                    <td>${m.death_year || '在世'}</td>
+                    <td>第 ${m.generation} 代</td>
+                    <td>
+                        <button class="btn-sm" onclick="viewMember(${m.member_id})">详情</button>
+                        <button class="btn-sm btn-danger" onclick="deleteMember(${m.member_id}, '${m.name}')">删除</button>
+                    </td>
+                </tr>
+            `).join('')}</tbody>
+        </table>`;
+}
+
+function renderPagination(total, page) {
+    const pages = Math.ceil(total / perPage);
+    if (pages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+    let html = '';
+    if (page > 1) html += `<button class="btn-page" onclick="loadMembers(${page-1})">上一页</button>`;
+    html += `<span class="page-info">第 ${page} / ${pages} 页（共 ${total.toLocaleString()} 条）</span>`;
+    if (page < pages) html += `<button class="btn-page" onclick="loadMembers(${page+1})">下一页</button>`;
+    document.getElementById('pagination').innerHTML = html;
+}
+
+let searchTimer;
+async function searchMembers() {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) { loadMembers(1); return; }
+    searchTimer = setTimeout(async () => {
+        const rows = await api(`/api/members/search?name=${encodeURIComponent(q)}&genealogy_id=${gid}`);
+        renderMemberTable(rows);
+        document.getElementById('pagination').innerHTML = '';
+    }, 300);
+}
+
+async function deleteMember(mid, name) {
+    if (!confirm(`确认删除成员"${name}"？`)) return;
+    await api(`/api/members/${mid}`, {method:'DELETE'});
+    showToast('已删除');
+    loadMembers(currentPage);
+}
+
+function viewMember(mid) { location.href = `/member/${mid}`; }
+
+async function submitMember(e) {
+    e.preventDefault();
+    await api(`/api/genealogies/${gid}/members`, {
+        method: 'POST',
+        body: JSON.stringify({
+            name: document.getElementById('mName').value,
+            gender: document.getElementById('mGender').value,
+            birth_year: parseInt(document.getElementById('mBirth').value) || null,
+            death_year: parseInt(document.getElementById('mDeath').value) || null,
+            generation: parseInt(document.getElementById('mGen').value) || 1,
+            biography: document.getElementById('mBio').value,
+        })
+    });
+    showToast('成员添加成功');
+    closeModal('addMemberModal');
+    loadMembers(currentPage);
+}
+
+// ── 树形图 ───────────────────────────────────────────────────
+async function loadTree() {
+    const rootId = document.getElementById('treeRootId').value;
+    const depth = document.getElementById('treeDepth').value;
+    if (!rootId) { showToast('请输入根节点ID', 'error'); return; }
+    const data = await api(`/api/members/${rootId}/tree?depth=${depth}`);
+    renderFamilyTree(data, '#treeContainer');
+}
+
+// ── 祖先查询 ─────────────────────────────────────────────────
+async function loadAncestors() {
+    const mid = document.getElementById('ancestorMemberId').value;
+    if (!mid) { showToast('请输入成员ID', 'error'); return; }
+    const data = await api(`/api/members/${mid}/ancestors`);
+    const container = document.getElementById('ancestorResult');
+    if (!data.length) { container.innerHTML = '<div class="empty-state">无祖先记录</div>'; return; }
+    container.innerHTML = `
+        <div class="ancestor-tree">
+            ${data.map(a => `
+                <div class="ancestor-node" style="padding-left:${a.depth * 24}px">
+                    <span class="ancestor-depth">第${a.depth}代</span>
+                    <span class="ancestor-name">${a.name}</span>
+                    <span class="ancestor-meta">${a.gender === 'M' ? '男' : '女'} · ${a.birth_year || '?'}年 · 第${a.generation}辈</span>
+                </div>
+            `).join('')}
+        </div>`;
+}
+
+// ── 亲缘关系 ─────────────────────────────────────────────────
+async function loadKinship() {
+    const id1 = document.getElementById('kinshipId1').value;
+    const id2 = document.getElementById('kinshipId2').value;
+    if (!id1 || !id2) { showToast('请输入两个成员ID', 'error'); return; }
+    const data = await api(`/api/members/kinship?id1=${id1}&id2=${id2}`);
+    const container = document.getElementById('kinshipResult');
+    if (!data.related) {
+        container.innerHTML = '<div class="result-box result-none">❌ 两人之间没有亲缘关系通路</div>';
+        return;
+    }
+    container.innerHTML = `
+        <div class="result-box result-found">
+            <div class="result-title">✅ 找到亲缘关系通路（${data.path.length} 人）</div>
+            <div class="kinship-path">
+                ${data.path.map((m, i) => `
+                    <span class="kinship-node">${m.name}<br><small>ID:${m.member_id}</small></span>
+                    ${i < data.path.length-1 ? '<span class="kinship-arrow">→</span>' : ''}
+                `).join('')}
+            </div>
+        </div>`;
+}
+
+init();
+</script>
+{% endblock %}

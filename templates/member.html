@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}成员详情{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <button class="btn-ghost" onclick="history.back()">← 返回</button>
+    <h1 id="memberName">加载中…</h1>
+    <button class="btn-primary" onclick="toggleEdit()" id="editBtn">编辑信息</button>
+</div>
+
+<div class="detail-layout">
+    <!-- 左列: 基本信息 -->
+    <div class="detail-card">
+        <h3>📋 基本信息</h3>
+        <div id="memberInfo" class="info-grid"></div>
+
+        <form id="editForm" class="hidden" onsubmit="saveEdit(event)">
+            <div class="form-row">
+                <div class="form-group"><label>姓名</label><input type="text" id="eName" required></div>
+                <div class="form-group"><label>性别</label>
+                    <select id="eGender"><option value="M">男</option><option value="F">女</option></select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>出生年</label><input type="number" id="eBirth"></div>
+                <div class="form-group"><label>卒年</label><input type="number" id="eDeath"></div>
+            </div>
+            <div class="form-group"><label>辈分（代）</label><input type="number" id="eGen" min="1"></div>
+            <div class="form-group"><label>生平简介</label><textarea id="eBio" rows="3"></textarea></div>
+            <div class="form-actions">
+                <button type="button" class="btn-ghost" onclick="toggleEdit()">取消</button>
+                <button type="submit" class="btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 右列: 关系管理 -->
+    <div class="detail-card">
+        <h3>👨‍👩‍👧‍👦 关系管理</h3>
+
+        <!-- 配偶 -->
+        <div class="relation-section">
+            <div class="relation-header">
+                <span class="relation-title">💍 配偶</span>
+                <button class="btn-sm" onclick="openRelModal('spouse')">＋ 添加</button>
+            </div>
+            <div id="relSpouses" class="relation-list">
+                <div class="rel-empty">暂无配偶记录</div>
+            </div>
+        </div>
+
+        <!-- 父母 -->
+        <div class="relation-section">
+            <div class="relation-header">
+                <span class="relation-title">👴 父母</span>
+                <button class="btn-sm" onclick="openRelModal('parent')">＋ 添加</button>
+            </div>
+            <div id="relParents" class="relation-list">
+                <div class="rel-empty">暂无父母记录</div>
+            </div>
+        </div>
+
+        <!-- 子女 -->
+        <div class="relation-section">
+            <div class="relation-header">
+                <span class="relation-title">👶 子女</span>
+                <button class="btn-sm" onclick="openRelModal('child')">＋ 添加</button>
+            </div>
+            <div id="relChildren" class="relation-list">
+                <div class="rel-empty">暂无子女记录</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── 添加关系 Modal ─────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="relModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="relModalTitle">添加关系</h2>
+            <button class="btn-icon" onclick="closeModal('relModal')">✕</button>
+        </div>
+
+        <!-- 搜索成员 -->
+        <div class="form-group">
+            <label>搜索成员（按姓名）</label>
+            <input type="text" id="relSearchInput" placeholder="输入姓名搜索…" oninput="searchForRel()">
+        </div>
+        <div id="relSearchResults" class="rel-search-results"></div>
+
+        <!-- 或直接输入 ID -->
+        <div class="form-group" style="margin-top:12px">
+            <label>或直接输入成员 ID</label>
+            <input type="number" id="relDirectId" placeholder="成员ID">
+        </div>
+
+        <!-- 配偶专属：成婚年份 -->
+        <div class="form-group hidden" id="marriageYearGroup">
+            <label>成婚年份（可选）</label>
+            <input type="number" id="relMarriageYear" placeholder="例：1998">
+        </div>
+
+        <!-- 父母专属：关系类型 -->
+        <div class="form-group hidden" id="parentTypeGroup">
+            <label>关系类型</label>
+            <select id="relParentType">
+                <option value="father">父亲（男性）</option>
+                <option value="mother">母亲（女性）</option>
+            </select>
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn-ghost" onclick="closeModal('relModal')">取消</button>
+            <button class="btn-primary" onclick="submitRelation()">确认添加</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const mid = parseInt(location.pathname.split('/')[2]);
+let memberData = null;
+let currentRelType = null; // 'parent' | 'child' | 'spouse'
+let genealogyId = null;
+
+// ── 初始化 ──────────────────────────────────────────────────
+async function init() {
+    memberData = await api(`/api/members/${mid}`);
+    genealogyId = memberData.genealogy_id;
+    document.getElementById('memberName').textContent = memberData.name;
+    renderInfo(memberData);
+    await loadRelations();
+}
+
+function renderInfo(m) {
+    document.getElementById('memberInfo').innerHTML = `
+        <div class="info-item"><span class="info-label">ID</span><span>#${m.member_id}</span></div>
+        <div class="info-item"><span class="info-label">性别</span><span>${m.gender === 'M' ? '♂ 男' : '♀ 女'}</span></div>
+        <div class="info-item"><span class="info-label">出生年</span><span>${m.birth_year || '未知'}</span></div>
+        <div class="info-item"><span class="info-label">卒年</span><span>${m.death_year || '在世'}</span></div>
+        <div class="info-item"><span class="info-label">辈分</span><span>第 ${m.generation} 代</span></div>
+        <div class="info-item"><span class="info-label">所属族谱</span><span>${m.genealogy_name}</span></div>
+        <div class="info-item full-width"><span class="info-label">生平简介</span><span>${m.biography || '暂无'}</span></div>
+    `;
+}
+
+// ── 编辑 ─────────────────────────────────────────────────────
+function toggleEdit() {
+    const info = document.getElementById('memberInfo');
+    const form = document.getElementById('editForm');
+    const editing = !form.classList.contains('hidden');
+    if (editing) {
+        form.classList.add('hidden');
+        info.classList.remove('hidden');
+        document.getElementById('editBtn').textContent = '编辑信息';
+    } else {
+        document.getElementById('eName').value = memberData.name;
+        document.getElementById('eGender').value = memberData.gender;
+        document.getElementById('eBirth').value = memberData.birth_year || '';
+        document.getElementById('eDeath').value = memberData.death_year || '';
+        document.getElementById('eGen').value = memberData.generation;
+        document.getElementById('eBio').value = memberData.biography || '';
+        info.classList.add('hidden');
+        form.classList.remove('hidden');
+        document.getElementById('editBtn').textContent = '取消编辑';
+    }
+}
+
+async function saveEdit(e) {
+    e.preventDefault();
+    try {
+        await api(`/api/members/${mid}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                name: document.getElementById('eName').value,
+                gender: document.getElementById('eGender').value,
+                birth_year: parseInt(document.getElementById('eBirth').value) || null,
+                death_year: parseInt(document.getElementById('eDeath').value) || null,
+                generation: parseInt(document.getElementById('eGen').value),
+                biography: document.getElementById('eBio').value,
+            })
+        });
+        showToast('修改成功');
+        memberData = await api(`/api/members/${mid}`);
+        document.getElementById('memberName').textContent = memberData.name;
+        renderInfo(memberData);
+        toggleEdit();
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+// ── 加载关系 ──────────────────────────────────────────────────
+async function loadRelations() {
+    const data = await api(`/api/members/${mid}/relations`);
+    renderRelList('relSpouses', data.spouses, 'spouse');
+    renderRelList('relParents', data.parents, 'parent');
+    renderRelList('relChildren', data.children, 'child');
+}
+
+function relTypeLabel(item, relKind) {
+    if (relKind === 'parent') {
+        return item.relation_type === 'father' ? '父亲' : '母亲';
+    }
+    if (relKind === 'child') {
+        return item.relation_type === 'father' ? '（父亲所记）' : '（母亲所记）';
+    }
+    return item.marriage_year ? `${item.marriage_year}年成婚` : '配偶';
+}
+
+function renderRelList(containerId, list, relKind) {
+    const el = document.getElementById(containerId);
+    if (!list || !list.length) {
+        el.innerHTML = '<div class="rel-empty">暂无记录</div>';
+        return;
+    }
+    el.innerHTML = list.map(item => `
+        <div class="rel-item">
+            <span class="rel-icon">${item.gender === 'M' ? '👨' : '👩'}</span>
+            <div class="rel-info">
+                <a class="rel-name" href="/member/${item.member_id}">${item.name}</a>
+                <span class="rel-meta">${relTypeLabel(item, relKind)} · ID: ${item.member_id} · ${item.birth_year || '?'}年生</span>
+            </div>
+            <button class="btn-sm btn-danger rel-del"
+                onclick="removeRelation('${relKind}', ${item.member_id})">移除</button>
+        </div>
+    `).join('');
+}
+
+// ── 删除关系 ──────────────────────────────────────────────────
+async function removeRelation(relKind, otherId) {
+    const labels = { parent: '父母', child: '子女', spouse: '配偶' };
+    if (!confirm(`确认移除该${labels[relKind]}关系？`)) return;
+    try {
+        let url;
+        if (relKind === 'parent')  url = `/api/members/${mid}/parents/${otherId}`;
+        if (relKind === 'child')   url = `/api/members/${mid}/children/${otherId}`;
+        if (relKind === 'spouse')  url = `/api/members/${mid}/spouse/${otherId}`;
+        await api(url, { method: 'DELETE' });
+        showToast('关系已移除');
+        loadRelations();
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+// ── 添加关系 Modal ────────────────────────────────────────────
+function openRelModal(relKind) {
+    currentRelType = relKind;
+    document.getElementById('relSearchInput').value = '';
+    document.getElementById('relDirectId').value = '';
+    document.getElementById('relSearchResults').innerHTML = '';
+    document.getElementById('relMarriageYear').value = '';
+
+    const titles = { parent: '添加父母', child: '添加子女', spouse: '添加配偶' };
+    document.getElementById('relModalTitle').textContent = titles[relKind];
+
+    document.getElementById('marriageYearGroup').classList.toggle('hidden', relKind !== 'spouse');
+    document.getElementById('parentTypeGroup').classList.toggle('hidden', relKind !== 'parent');
+
+    document.getElementById('relModal').classList.remove('hidden');
+}
+
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+// 搜索成员（限同族谱）
+let searchTimer;
+async function searchForRel() {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('relSearchInput').value.trim();
+    const container = document.getElementById('relSearchResults');
+    if (!q) { container.innerHTML = ''; return; }
+    searchTimer = setTimeout(async () => {
+        const rows = await api(`/api/members/search?name=${encodeURIComponent(q)}&genealogy_id=${genealogyId}`);
+        if (!rows.length) { container.innerHTML = '<div class="rel-empty">未找到成员</div>'; return; }
+        container.innerHTML = rows.map(r => `
+            <div class="rel-search-item" onclick="selectRelMember(${r.member_id}, '${r.name}')">
+                <span>${r.name}</span>
+                <span class="rel-meta">ID: ${r.member_id} · ${r.gender === 'M' ? '男' : '女'} · ${r.birth_year || '?'}年 · 第${r.generation}代</span>
+            </div>
+        `).join('');
+    }, 300);
+}
+
+function selectRelMember(id, name) {
+    document.getElementById('relDirectId').value = id;
+    document.getElementById('relSearchResults').innerHTML =
+        `<div class="rel-selected">✅ 已选中：${name}（ID: ${id}）</div>`;
+    document.getElementById('relSearchInput').value = name;
+}
+
+async function submitRelation() {
+    const targetId = parseInt(document.getElementById('relDirectId').value);
+    if (!targetId) { showToast('请选择或输入成员ID', 'error'); return; }
+    try {
+        let url, body;
+        if (currentRelType === 'parent') {
+            url = `/api/members/${mid}/parents`;
+            body = { parent_id: targetId, relation_type: document.getElementById('relParentType').value };
+        } else if (currentRelType === 'child') {
+            url = `/api/members/${mid}/children`;
+            body = { child_id: targetId };
+        } else {
+            url = `/api/members/${mid}/spouse`;
+            const my = parseInt(document.getElementById('relMarriageYear').value) || null;
+            body = { spouse_id: targetId, marriage_year: my };
+        }
+        const result = await api(url, { method: 'POST', body: JSON.stringify(body) });
+        showToast(result.message);
+        closeModal('relModal');
+        loadRelations();
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+init();
+</script>
+{% endblock %}

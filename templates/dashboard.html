@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}控制台{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>我的族谱</h1>
+    <button class="btn-primary" onclick="openCreateModal()">＋ 创建族谱</button>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-row" id="globalStats">
+    <div class="stat-card"><div class="stat-num" id="totalGenealogy">—</div><div class="stat-label">族谱数量</div></div>
+    <div class="stat-card"><div class="stat-num" id="totalMembers">—</div><div class="stat-label">总成员数</div></div>
+</div>
+
+<!-- 族谱列表 -->
+<div class="card-grid" id="genealogyGrid">
+    <div class="loading-text">加载中…</div>
+</div>
+
+<!-- 创建族谱对话框 -->
+<div class="modal-overlay hidden" id="createModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>创建新族谱</h2>
+            <button class="btn-icon" onclick="closeModal('createModal')">✕</button>
+        </div>
+        <form onsubmit="createGenealogy(event)">
+            <div class="form-group">
+                <label>谱名 *</label>
+                <input type="text" id="newName" placeholder="例：李氏宗谱" required>
+            </div>
+            <div class="form-group">
+                <label>姓氏 *</label>
+                <input type="text" id="newSurname" placeholder="例：李" required maxlength="10">
+            </div>
+            <div class="form-group">
+                <label>修谱时间</label>
+                <input type="date" id="newRevDate">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-ghost" onclick="closeModal('createModal')">取消</button>
+                <button type="submit" class="btn-primary">创 建</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 邀请用户对话框 -->
+<div class="modal-overlay hidden" id="inviteModal">
+    <div class="modal">
+        <div class="modal-header"><h2>邀请协作者</h2><button class="btn-icon" onclick="closeModal('inviteModal')">✕</button></div>
+        <div class="form-group">
+            <label>用户名</label>
+            <input type="text" id="inviteUsername" placeholder="输入对方用户名">
+        </div>
+        <div class="modal-footer">
+            <button class="btn-ghost" onclick="closeModal('inviteModal')">取消</button>
+            <button class="btn-primary" onclick="doInvite()">邀请</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let inviteTargetId = null;
+
+async function loadGenealogies() {
+    const list = await api('/api/genealogies');
+    const grid = document.getElementById('genealogyGrid');
+    document.getElementById('totalGenealogy').textContent = list.length;
+    const totalM = list.reduce((s, g) => s + (g.member_count || 0), 0);
+    document.getElementById('totalMembers').textContent = totalM.toLocaleString();
+
+    if (!list.length) {
+        grid.innerHTML = '<div class="empty-state">暂无族谱，点击右上角创建</div>';
+        return;
+    }
+    grid.innerHTML = list.map(g => `
+        <div class="genealogy-card" onclick="location.href='/genealogy/${g.genealogy_id}'">
+            <div class="card-badge">${g.role === 'owner' ? '所有者' : '协作者'}</div>
+            <div class="card-title">🌳 ${g.name}</div>
+            <div class="card-meta">姓氏：${g.surname} · 成员：${(g.member_count||0).toLocaleString()} 人</div>
+            <div class="card-meta">创建者：${g.creator} ${g.revision_date ? '· 修谱：' + g.revision_date : ''}</div>
+            <div class="card-actions" onclick="event.stopPropagation()">
+                ${g.role === 'owner' ? `
+                <button class="btn-sm" onclick="openInvite(${g.genealogy_id})">邀请</button>
+                <button class="btn-sm btn-danger" onclick="deleteGenealogy(${g.genealogy_id}, '${g.name}')">删除</button>
+                ` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function openCreateModal() {
+    document.getElementById('createModal').classList.remove('hidden');
+}
+function closeModal(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+function openInvite(gid) {
+    inviteTargetId = gid;
+    document.getElementById('inviteUsername').value = '';
+    document.getElementById('inviteModal').classList.remove('hidden');
+}
+
+async function createGenealogy(e) {
+    e.preventDefault();
+    try {
+        await api('/api/genealogies', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: document.getElementById('newName').value,
+                surname: document.getElementById('newSurname').value,
+                revision_date: document.getElementById('newRevDate').value || null,
+            })
+        });
+        closeModal('createModal');
+        showToast('族谱创建成功');
+        loadGenealogies();
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function deleteGenealogy(gid, name) {
+    if (!confirm(`确认删除族谱"${name}"？此操作不可撤销。`)) return;
+    try {
+        await api(`/api/genealogies/${gid}`, {method:'DELETE'});
+        showToast('删除成功');
+        loadGenealogies();
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+async function doInvite() {
+    const username = document.getElementById('inviteUsername').value.trim();
+    if (!username) { showToast('请输入用户名', 'error'); return; }
+    try {
+        const r = await api(`/api/genealogies/${inviteTargetId}/invite`, {
+            method: 'POST',
+            body: JSON.stringify({ username })
+        });
+        showToast(r.message);
+        closeModal('inviteModal');
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
+loadGenealogies();
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 密钥与本地配置（不入库）
+.env
+
+# 生成的大文件
+data/csv/
+
+# 日志 & 临时
+*.log
+.DS_Store
+Thumbs.db
